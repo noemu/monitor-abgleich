@@ -63,38 +63,54 @@ export function detectMarkers(AR, img) {
   return found;
 }
 
-export function findScreens(markers) {
-  const byId = MARKER_IDS.map(id => markers.filter(m => m.id === id).sort((a, b) => b.size - a.size).slice(0, 2));
-  const counts = byId.map(a => a.length);
-  if (counts.some(c => c < 2)) return { ok: false, counts };
-  let best = null;
-  for (let mask = 0; mask < 8; mask++) {
-    const A = [byId[0][0]], B = [byId[0][1]];
-    for (let k = 1; k < 4; k++) {
-      const bit = (mask >> (k - 1)) & 1;
-      A.push(byId[k][bit]); B.push(byId[k][1 - bit]);
-    }
-    const qa = A.map(m => m.center), qb = B.map(m => m.center);
-    if (!isConvexClockwise(qa) || !isConvexClockwise(qb)) continue;
-    const score = perimeter(qa) + perimeter(qb);
-    if (!best || score < best.score) best = { score, groups: [A, B] };
-  }
-  if (!best) return { ok: false, counts };
-  return { ok: true, counts, groups: best.groups };
+const MAX_ERR = 0.15;
+
+function fitGroup(group) {
+  const src = [], dst = [];
+  for (const m of group) { src.push(...markerCorners(MARKER_IDS.indexOf(m.id))); dst.push(...sortQuad(m.corners)); }
+  const H = homography(src, dst);
+  if (!H) return null;
+  let e = 0;
+  src.forEach((p, i) => { const q = H(p[0], p[1]); e += (q[0] - dst[i][0]) ** 2 + (q[1] - dst[i][1]) ** 2; });
+  const size = group.reduce((s, m) => s + m.size, 0) / group.length;
+  const quad = UNIT.map(([u, v]) => H(u, v));
+  return isConvexClockwise(quad) ? { quad, err: Math.sqrt(e / src.length) / size } : null;
 }
 
-export function screenCorners(group) {
-  const src = [], dst = [];
-  group.forEach((m, i) => { src.push(...markerCorners(i)); dst.push(...sortQuad(m.corners)); });
-  const H = homography(src, dst);
-  return H ? UNIT.map(([u, v]) => H(u, v)) : null;
+function inside(q, p) {
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4];
+    if ((b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]) <= 0) return false;
+  }
+  return true;
+}
+
+export function findScreens(markers) {
+  const counts = MARKER_IDS.map(id => markers.filter(m => m.id === id).length);
+  const cand = MARKER_IDS.flatMap(id => markers.filter(m => m.id === id).sort((a, b) => b.size - a.size).slice(0, 2));
+  let best = null;
+  for (let n = 0, total = 3 ** cand.length; n < total; n++) {
+    const A = [], B = [];
+    let k = n;
+    for (const m of cand) {
+      const a = k % 3;
+      k = (k - a) / 3;
+      if (a === 1) A.push(m);
+      else if (a === 2) { if (!A.length) break; B.push(m); }
+    }
+    if (A.length < 2 || B.length < 2 || A.length + B.length < 4) continue;
+    if (new Set(A.map(m => m.id)).size !== A.length || new Set(B.map(m => m.id)).size !== B.length) continue;
+    const fa = fitGroup(A), fb = fitGroup(B);
+    if (!fa || !fb || fa.err > MAX_ERR || fb.err > MAX_ERR) continue;
+    if (inside(fa.quad, center(fb.quad)) || inside(fb.quad, center(fa.quad))) continue;
+    const score = (fa.err + fb.err) / 2 + 0.05 * (cand.length - A.length - B.length);
+    if (!best || score < best.score) best = { score, quads: [fa.quad, fb.quad], groups: [A, B] };
+  }
+  return best ? { ok: true, counts, quads: best.quads, groups: best.groups } : { ok: false, counts };
 }
 
 export function locateScreens(AR, img) {
   const markers = detectMarkers(AR, img);
   const res = findScreens(markers);
-  if (!res.ok) return { ok: false, counts: res.counts, markers };
-  const quads = res.groups.map(screenCorners);
-  if (quads.some(q => !q)) return { ok: false, counts: res.counts, markers };
-  return { ok: true, quads, markers };
+  return { ...res, markers };
 }

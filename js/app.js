@@ -1,13 +1,12 @@
-import { PATCHES, patchRects, patternRects, drawPattern, MARKER_IDS } from './pattern.js';
+import { PATCHES, patternRects, drawPattern } from './pattern.js';
 import { homography, sortQuad, UNIT } from './geometry.js';
 import { locateScreens } from './detect.js';
-import { measure, advise, names, fmt } from './analyze.js';
+import { measure, advise, names, fmt, SETTINGS, facingSides, sideRects, SIDE_NAMES } from './analyze.js';
 import { synthPhoto, DEMO } from './synth.js';
 
 const AR = window.AR;
 const RECTS = patternRects(AR);
 const MAX_DIM = 3000;
-const CORNER_NAMES = ['oben links', 'oben rechts', 'unten rechts', 'unten links'];
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -66,12 +65,11 @@ function runDetect() {
       const c = res.quads.map(q => [q.reduce((s, p) => s + p[0], 0) / 4, q.reduce((s, p) => s + p[1], 0) / 4]);
       const axis = Math.abs(c[0][0] - c[1][0]) >= Math.abs(c[0][1] - c[1][1]) ? 0 : 1;
       pts = (c[0][axis] <= c[1][axis] ? res.quads : [res.quads[1], res.quads[0]]).flat();
-      detectInfo = { ok: true, text: 'Beide Testbilder erkannt. Die Ecken lassen sich bei Bedarf nachziehen.' };
+      detectInfo = { ok: true, text: 'Beide Testbilder erkannt. Gemessen wird an den Streifen, an denen die Monitore aneinanderstoßen.' };
     } else {
       pts = [];
-      const counts = res.counts || MARKER_IDS.map(id => res.markers ? res.markers.filter(m => m.id === id).length : 0);
-      const missing = counts.map((c, i) => (c < 2 ? `${CORNER_NAMES[i]} ${c}/2` : null)).filter(Boolean);
-      detectInfo = { ok: false, text: `Nicht alle Eck-Codes gefunden (${missing.join(', ')}). Sind beide Testbilder ganz im Foto und füllen es gut aus? Sonst Ecken von Hand antippen.` };
+      const n = res.markers ? res.markers.length : 0;
+      detectInfo = { ok: false, text: `Keine zwei Testbilder zuzuordnen (${n} Eck-Codes erkannt). Nötig sind pro Monitor mindestens die beiden Codes an der Seite, an der die Monitore aneinanderstoßen. Sonst Ecken von Hand antippen, dafür müssen beide Monitore ganz im Foto sein.` };
     }
     update();
   }, 30);
@@ -140,14 +138,16 @@ function render() {
   if (!image) return;
   vctx.drawImage(src, 0, 0);
   const s = scale(), cols = ['#5db3d1', '#f0a640'];
-  quads().forEach((q, qi) => {
+  const qs = quads();
+  const sides = qs.length === 2 ? facingSides(qs.map(sortQuad)) : [];
+  qs.forEach((q, qi) => {
     vctx.lineWidth = 2 * s; vctx.strokeStyle = cols[qi];
     vctx.beginPath(); q.forEach((p, i) => (i ? vctx.lineTo(...p) : vctx.moveTo(...p))); vctx.closePath(); vctx.stroke();
     if (drag >= 0) return;
     const H = homography(UNIT, sortQuad(q));
     if (!H) return;
-    vctx.lineWidth = 1 * s;
-    for (const p of PATCHES) for (const r of patchRects(p)) {
+    vctx.lineWidth = 1.5 * s;
+    for (const p of PATCHES) for (const r of sideRects(p, sides[qi])) {
       const c = [[r.x + r.w * .3, r.y + r.h * .3], [r.x + r.w * .7, r.y + r.h * .3], [r.x + r.w * .7, r.y + r.h * .7], [r.x + r.w * .3, r.y + r.h * .7]].map(([u, v]) => H(u, v));
       vctx.beginPath(); c.forEach((p2, i) => (i ? vctx.lineTo(...p2) : vctx.moveTo(...p2))); vctx.closePath(); vctx.stroke();
     }
@@ -190,7 +190,9 @@ function analyze() {
     out.innerHTML = '<p class="muted">Sobald beide Monitore erkannt sind, steht hier, was einzustellen ist.</p>';
     return;
   }
-  const ms = quads().map(q => measure(image, sortQuad(q)));
+  const qs = quads().map(sortQuad);
+  const sides = facingSides(qs);
+  const ms = qs.map((q, i) => measure(image, q, sides[i]));
   if (ms.some(m => !m)) { out.innerHTML = '<p class="warn">Die Ecken ergeben kein gültiges Viereck. Bitte neu setzen.</p>'; return; }
   const nm = names(ms);
   const auto = ms[0].yW <= ms[1].yW ? 0 : 1;
@@ -199,9 +201,10 @@ function analyze() {
   b0.setAttribute('aria-pressed', String(ri === 0)); b1.setAttribute('aria-pressed', String(ri === 1));
   note.textContent = ri === auto ? 'automatisch: der dunklere Monitor, damit der andere nur abgesenkt werden muss' : 'manuell gewählt';
 
-  const items = advise(ms[ri], ms[ai]);
+  const items = advise(ms[ri], ms[ai], avail);
   const todo = items.filter(i => i.act === 'up' || i.act === 'down').length;
   const warns = [];
+  ms.forEach((m, i) => { if (m.coverage < 0.9) warns.push(`Beim Monitor ${nm[i]} ist der Messstreifen ${SIDE_NAMES[m.side]} nicht vollständig im Foto. Etwas weiter weg oder mittiger fotografieren.`); });
   if (ms.some(m => m.clipped)) warns.push('Weiß ist im Foto ausgebrannt. Belichtung an der Kamera senken und neu fotografieren, sonst stimmen RGB und Helligkeit nicht.');
   if (ms.some(m => m.dark)) warns.push('Das Foto ist sehr dunkel. Belichtung erhöhen.');
   if (Math.abs(ms[0].lin.w[1] - ms[1].lin.w[1]) / Math.max(ms[0].lin.w[1], ms[1].lin.w[1]) > 0.6) warns.push('Die Monitore unterscheiden sich sehr stark. Prüfe, ob beide das Testbild formatfüllend zeigen und die Ecken stimmen.');
@@ -215,7 +218,7 @@ function analyze() {
       <p class="verdict">${todo ? `Am Monitor <em>${esc(nm[ai])}</em> einstellen:` : `${esc(nm[ai])} passt bereits gut zur Referenz.`}</p>
       ${warns.map(w => `<p class="warn">${esc(w)}</p>`).join('')}
       <div class="osd">${items.map(row).join('')}</div>
-      <p class="muted">Reihenfolge: erst RGB, dann Helligkeit, dann Gamma. RGB ist so gerechnet, dass nur abgesenkt wird. Danach neu fotografieren.</p>
+      <p class="muted">Reihenfolge: erst Kontrast, dann RGB, dann Helligkeit, dann Gamma. RGB ist so gerechnet, dass nur abgesenkt wird. Danach neu fotografieren.</p>
       <details>
         <summary>Messwerte</summary>
         <div class="tablewrap"><table>
@@ -224,15 +227,25 @@ function analyze() {
             ${tr('Weiß, Leuchtdichte', m => fmt(100 * m.yW / ref.yW) + ' %')}
             ${['R', 'G', 'B'].map((k, c) => tr(`Weiß, Kanal ${k}`, m => fmt(100 * m.W[c] / ref.W[c]) + ' %')).join('')}
             ${tr('Gamma (Kamera, relativ)', m => (isFinite(m.gamma) ? fmt(m.gamma, 2) : '–'))}
+            ${tr('Stufe 80 % (relativ)', m => (isFinite(m.highlight) ? fmt(100 * m.highlight) + ' %' : '–'))}
             ${tr('Schwarz / Weiß', m => fmt(100 * m.yK / m.yW, 2) + ' %')}
             ${tr('Farbreinheit R/G/B', m => fmt(100 * m.purity) + ' %')}
             ${tr('Weiß im Foto (max. 0–255)', m => Math.max(...m.raw.w))}
           </tbody>
         </table></div>
-        <p class="muted" style="margin-top:8px">Die Kamera misst nicht absolut. Aussagekräftig ist nur der Vergleich der beiden Monitore im selben Foto.</p>
+        <p class="muted" style="margin-top:8px">Gemessen am Streifen ${esc(SIDE_NAMES[ms[ri].side])} (${esc(nm[ri])}) und ${esc(SIDE_NAMES[ms[ai].side])} (${esc(nm[ai])}). Die Kamera misst nicht absolut. Aussagekräftig ist nur der Vergleich der beiden Monitore im selben Foto.</p>
       </details>
     </div>`;
 }
+const AVAIL_KEY = 'monitor-abgleich.regler';
+const avail = Object.fromEntries(SETTINGS.map(([k]) => [k, true]));
+try { Object.assign(avail, JSON.parse(localStorage.getItem(AVAIL_KEY)) || {}); } catch {}
+$('avail').innerHTML = SETTINGS.map(([k, label]) => `<label class="chip"><input type="checkbox" value="${k}"${avail[k] ? ' checked' : ''}>${esc(label)}</label>`).join('');
+$('avail').addEventListener('change', e => {
+  avail[e.target.value] = e.target.checked;
+  try { localStorage.setItem(AVAIL_KEY, JSON.stringify(avail)); } catch {}
+  analyze();
+});
 $('ref0').addEventListener('click', () => { refChoice = 0; analyze(); });
 $('ref1').addEventListener('click', () => { refChoice = 1; analyze(); });
 

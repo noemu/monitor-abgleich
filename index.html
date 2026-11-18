@@ -12,7 +12,7 @@
 <main>
   <header>
     <h1>Monitor-Abgleich</h1>
-    <p>Testbild auf beiden Monitoren anzeigen, beide zusammen fotografieren. Die App findet die Testbilder selbst, nimmt einen Monitor als Referenz und sagt dir, was du am anderen im Monitormenü verstellen musst.</p>
+    <p>Testbild auf beiden Monitoren anzeigen, die Stelle fotografieren, an der sie aneinanderstoßen. Die App findet die Testbilder selbst, nimmt einen Monitor als Referenz und sagt dir, was du am anderen im Monitormenü verstellen musst.</p>
   </header>
 
   <section aria-labelledby="s1">
@@ -26,7 +26,7 @@
 
   <section aria-labelledby="s2">
     <div class="step"><b>SCHRITT 2</b><h2 id="s2">Foto machen</h2></div>
-    <p class="muted">Klappt die Erkennung nicht, tippst du die 4 Ecken der Bildfläche pro Monitor von Hand an.</p>
+    <p class="muted">Es reicht die Nahtstelle: von jedem Monitor der Messstreifen an der zugewandten Seite, zusammen mit den Codes darüber und darunter. Gemessen wird nur dort, weil die Kamera beide Streifen im gleichen Winkel sieht. Klappt die Erkennung nicht, tippst du die 4 Ecken der Bildfläche pro Monitor von Hand an. Dafür müssen beide Monitore ganz im Foto sein.</p>
     <div class="row">
       <label class="filebtn primary">Foto aufnehmen<input id="inCam" type="file" accept="image/*" capture="environment"></label>
       <label class="filebtn">Bild aus Galerie<input id="inGal" type="file" accept="image/*"></label>
@@ -49,13 +49,17 @@
       </div>
       <span id="refNote" class="muted"></span>
     </div>
+    <div class="row">
+      <span class="muted">Regler am anzupassenden Monitor:</span>
+      <div id="avail" class="chips" role="group" aria-label="Vorhandene Regler"></div>
+    </div>
     <div id="results"><p class="muted">Sobald beide Monitore erkannt sind, steht hier, was einzustellen ist.</p></div>
     <details>
       <summary>Tipps für ein brauchbares Foto</summary>
       <ul>
         <li>Monitore 20–30 Minuten warmlaufen lassen, Eco-, Dynamik- und Auto-Helligkeits-Modi ausschalten.</li>
         <li>Farbtemperatur im Monitormenü auf „Benutzer“ stellen, sonst sind die RGB-Regler gesperrt.</li>
-        <li>Raum abdunkeln, aus 1–2 m Abstand möglichst frontal und mittig zwischen beiden Monitoren fotografieren. Die Monitore sollten den Großteil des Fotos füllen.</li>
+        <li>Raum abdunkeln, frontal auf die Nahtstelle zwischen den Monitoren fotografieren. Ruhig nah ran, die beiden Messstreifen und die vier Codes an ihren Enden sollten das Foto gut füllen.</li>
         <li>HDR, Nachtmodus und Filter der Kamera aus. Auf das weiße Feld tippen und Belichtung etwas runterziehen, damit Weiß nicht ausbrennt.</li>
         <li>Nach dem Verstellen ein neues Foto machen. Die App zeigt dann, was noch übrig ist. Zwei bis drei Durchgänge sind normal.</li>
       </ul>

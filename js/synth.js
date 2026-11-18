@@ -2,8 +2,8 @@ import { homography, UNIT } from './geometry.js';
 
 const toSrgb = l => { l = Math.min(1, Math.max(0, l)); return l <= 0.0031308 ? l * 12.92 : 1.055 * Math.pow(l, 1 / 2.4) - 0.055; };
 
-export function makeDisplay({ gain = [1, 1, 1], gamma = 2.2, black = 0.003, exposure = 0.8 } = {}) {
-  return rgb => rgb.map((v, c) => toSrgb(exposure * (black + (1 - black) * gain[c] * Math.pow(v, gamma))));
+export function makeDisplay({ gain = [1, 1, 1], gamma = 2.2, black = 0.003, exposure = 0.8, contrast = 1 } = {}) {
+  return rgb => rgb.map((v, c) => toSrgb(exposure * (black + (1 - black) * gain[c] * Math.pow(Math.min(1, v * contrast), gamma))));
 }
 
 export function rasterize(rects, W, H, display) {
